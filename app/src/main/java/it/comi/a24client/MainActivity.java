@@ -13,7 +13,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
+import android.graphics.Color;
+import android.view.Gravity;
+import android.view.ViewGroup;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +31,18 @@ public class MainActivity extends Activity {
     TextView replyTextView;
     Button connectButton;
     Button sendButton;
+    EditText dataEditText;
+
+    // Grid constants
+    private static final int GRID_ROWS = 6;
+    private static final int GRID_COLS = 4;
+
+    // Grid selection state
+    private int selectedRow = 0;
+    private int selectedCol = 0;
+    private int selectedHand = 0; // 0: Hours, 1: Minutes
+    private int selectedDegrees = 0;
+    private Button[][] clockButtons = new Button[GRID_ROWS][GRID_COLS];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,72 +56,173 @@ public class MainActivity extends Activity {
         textView = new TextView(this);
         textView.setText("hostname / IP:");
         linearLayout.addView(textView);
+
+        LinearLayout ipContainer = new LinearLayout(this);
+        ipContainer.setOrientation(LinearLayout.HORIZONTAL);
+        linearLayout.addView(ipContainer);
+
         final EditText hostnameEditText = new EditText(this);
-        hostnameEditText.setText("10.10.0.52");
+        hostnameEditText.setText("10.10.0.22");
         hostnameEditText.setSingleLine(true);
-        linearLayout.addView(hostnameEditText);
-
-        textView = new TextView(this);
-        textView.setText("port:");
-        linearLayout.addView(textView);
-        final EditText portEditText = new EditText(this);
-        portEditText.setText("80");
-        portEditText.setSingleLine(true);
-        linearLayout.addView(portEditText);
-
-        textView = new TextView(this);
-        textView.setText("data to send:");
-        linearLayout.addView(textView);
-        final EditText dataEditText = new EditText(this);
-        dataEditText.setText("ECHO");
-        linearLayout.addView(dataEditText);
-
-        replyTextView = new TextView(this);
-        final ScrollView replyTextScrollView = new ScrollView(this);
-        replyTextScrollView.addView(replyTextView);
-
+        LinearLayout.LayoutParams ipParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1.0f
+        );
+        hostnameEditText.setLayoutParams(ipParams);
+        ipContainer.addView(hostnameEditText);
 
         connectButton = new Button(this);
         connectButton.setText("CONNECT");
         connectButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
-                //sends the message to the server
                 if (mTcpClient != null && mTcpClient.isConnected()) {
                     mTcpClient.stopClient();
                     mTcpClient = null;
                     setConnectedStatus(false);
                 } else {
-                    new ConnectTask().execute(hostnameEditText.getText().toString(), portEditText.getText().toString());
+                    new ConnectTask().execute(hostnameEditText.getText().toString(), "23");
                 }
-
-
             }
         });
-        linearLayout.addView(connectButton);
+        ipContainer.addView(connectButton);
+
+        textView = new TextView(this);
+        textView.setText("data to send:");
+        linearLayout.addView(textView);
+
+        LinearLayout dataContainer = new LinearLayout(this);
+        dataContainer.setOrientation(LinearLayout.HORIZONTAL);
+        linearLayout.addView(dataContainer);
+
+        dataEditText = new EditText(this);
+        dataEditText.setText("ECHO");
+        LinearLayout.LayoutParams dataParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1.0f
+        );
+        dataEditText.setLayoutParams(dataParams);
+        dataContainer.addView(dataEditText);
 
         sendButton = new Button(this);
-        sendButton.setText("send command");
+        sendButton.setText("SEND");
         sendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
-                //sends the message to the server
                 if (mTcpClient != null) {
-                    Date currentTime = Calendar.getInstance().getTime();
                     String dataToSend = dataEditText.getText().toString();
                     mTcpClient.sendMessage(dataToSend);
                 }
-
             }
         });
         sendButton.setEnabled(false);
-        linearLayout.addView(sendButton);
+        dataContainer.addView(sendButton);
 
-        textView = new TextView(this);
-        textView.setText("output:");
-        linearLayout.addView(textView);
+        // --- Grid UI ---
+        TextView gridLabel = new TextView(this);
+        gridLabel.setText("Select Clock (Tap to toggle Hand):");
+        linearLayout.addView(gridLabel);
+
+        LinearLayout gridContainer = new LinearLayout(this);
+        gridContainer.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1.0f
+        );
+        linearLayout.addView(gridContainer, gridParams);
+
+        for (int r = 0; r < GRID_ROWS; r++) {
+            LinearLayout rowLayout = new LinearLayout(this);
+            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+            rowLayout.setWeightSum(GRID_COLS);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1.0f
+            );
+            gridContainer.addView(rowLayout, rowParams);
+
+            for (int c = 0; c < GRID_COLS; c++) {
+                final int row = r;
+                final int col = c;
+                Button b = new Button(this);
+                b.setText(" ");
+                b.setTextSize(10);
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        1.0f
+                );
+                b.setLayoutParams(params);
+                b.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        handleClockClick(row, col);
+                    }
+                });
+                clockButtons[r][c] = b;
+                rowLayout.addView(b);
+            }
+        }
+
+        // --- Slider UI ---
+        final TextView sliderLabel = new TextView(this);
+        sliderLabel.setText("Rotate: 0");
+        linearLayout.addView(sliderLabel);
+
+        SeekBar seekBar = new SeekBar(this);
+        seekBar.setMax(180); // Range -90 to +90
+        seekBar.setProgress(90); // 0
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                selectedDegrees = progress - 90;
+                sliderLabel.setText("Rotate: " + selectedDegrees);
+                updateDataString();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        linearLayout.addView(seekBar);
+
+        // Initialize
+        updateGridSelection();
+        updateDataString();
+
+        replyTextView = new TextView(this);
+        final ScrollView replyTextScrollView = new ScrollView(this);
+        replyTextScrollView.addView(replyTextView);
+
+        final TextView outputLabel = new TextView(this);
+        outputLabel.setText("output:");
+        outputLabel.setVisibility(View.GONE);
+
+        final Button toggleOutputButton = new Button(this);
+        toggleOutputButton.setText("Show Output");
+        toggleOutputButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (replyTextScrollView.getVisibility() == View.VISIBLE) {
+                    replyTextScrollView.setVisibility(View.GONE);
+                    outputLabel.setVisibility(View.GONE);
+                    toggleOutputButton.setText("Show Output");
+                } else {
+                    replyTextScrollView.setVisibility(View.VISIBLE);
+                    outputLabel.setVisibility(View.VISIBLE);
+                    toggleOutputButton.setText("Hide Output");
+                }
+            }
+        });
+        linearLayout.addView(toggleOutputButton);
+        linearLayout.addView(outputLabel);
+        replyTextScrollView.setVisibility(View.GONE);
         linearLayout.addView(replyTextScrollView);
 
         this.setContentView(linearLayout);
@@ -120,6 +237,44 @@ public class MainActivity extends Activity {
             mTcpClient.stopClient();
         }
 
+    }
+
+    private void handleClockClick(int row, int col) {
+        if (selectedRow == row && selectedCol == col) {
+            // Toggle hand
+            selectedHand = 1 - selectedHand; // Toggle 0 <-> 1
+        } else {
+            // Select new clock, reset hand to Hours (0)
+            selectedRow = row;
+            selectedCol = col;
+            selectedHand = 0;
+        }
+        updateGridSelection();
+        updateDataString();
+    }
+
+    private void updateGridSelection() {
+        for (int r = 0; r < GRID_ROWS; r++) {
+            for (int c = 0; c < GRID_COLS; c++) {
+                Button b = clockButtons[r][c];
+                if (b == null) continue;
+                if (r == selectedRow && c == selectedCol) {
+                    b.setBackgroundColor(Color.CYAN);
+                    b.setText(selectedHand == 0 ? "H" : "M");
+                } else {
+                    b.setBackgroundColor(Color.LTGRAY);
+                    b.setText(" ");
+                }
+            }
+        }
+    }
+
+    private void updateDataString() {
+        if (dataEditText != null) {
+            char handChar = (selectedHand == 0) ? '0' : '1';
+            String data = String.format("%d%d%c%+d", selectedRow, selectedCol, handChar, selectedDegrees);
+            dataEditText.setText(data);
+        }
     }
 
     protected void setConnectedStatus(boolean connectedStatus) {
@@ -178,7 +333,7 @@ public class MainActivity extends Activity {
             //response received from server
             Log.d("test", "response " + values[0]);
             //process server response here....
-            replyTextView.append(values[0]);
+            replyTextView.append(values[0] + "\n");
         }
 
     }
