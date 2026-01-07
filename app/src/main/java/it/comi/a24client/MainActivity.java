@@ -42,7 +42,7 @@ public class MainActivity extends Activity {
     private int selectedCol = 0;
     private int selectedHand = 0; // 0: Hours, 1: Minutes
     private int selectedDegrees = 0;
-    private Button[][] clockButtons = new Button[GRID_ROWS][GRID_COLS];
+    private ClockView[][] clockViews = new ClockView[GRID_ROWS][GRID_COLS];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,6 +125,10 @@ public class MainActivity extends Activity {
         gridLabel.setText("Select Clock (Tap to toggle Hand):");
         linearLayout.addView(gridLabel);
 
+        TextView legendLabel = new TextView(this);
+        legendLabel.setText("Red: Hand 1 (Even Motor), Blue: Hand 2 (Odd Motor)");
+        linearLayout.addView(legendLabel);
+
         LinearLayout gridContainer = new LinearLayout(this);
         gridContainer.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
@@ -148,23 +152,21 @@ public class MainActivity extends Activity {
             for (int c = 0; c < GRID_COLS; c++) {
                 final int row = r;
                 final int col = c;
-                Button b = new Button(this);
-                b.setText(" ");
-                b.setTextSize(10);
+                ClockView cv = new ClockView(this);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                         0,
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         1.0f
                 );
-                b.setLayoutParams(params);
-                b.setOnClickListener(new View.OnClickListener() {
+                cv.setLayoutParams(params);
+                cv.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View view) {
                         handleClockClick(row, col);
                     }
                 });
-                clockButtons[r][c] = b;
-                rowLayout.addView(b);
+                clockViews[r][c] = cv;
+                rowLayout.addView(cv);
             }
         }
 
@@ -230,13 +232,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
-        // call the superclass method first
         super.onStop();
 
         if (mTcpClient != null) {
             mTcpClient.stopClient();
         }
-
     }
 
     private void handleClockClick(int row, int col) {
@@ -256,14 +256,12 @@ public class MainActivity extends Activity {
     private void updateGridSelection() {
         for (int r = 0; r < GRID_ROWS; r++) {
             for (int c = 0; c < GRID_COLS; c++) {
-                Button b = clockButtons[r][c];
-                if (b == null) continue;
+                ClockView cv = clockViews[r][c];
+                if (cv == null) continue;
                 if (r == selectedRow && c == selectedCol) {
-                    b.setBackgroundColor(Color.CYAN);
-                    b.setText(selectedHand == 0 ? "H" : "M");
+                    cv.setBackgroundColor(Color.CYAN);
                 } else {
-                    b.setBackgroundColor(Color.LTGRAY);
-                    b.setText(" ");
+                    cv.setBackgroundColor(Color.LTGRAY);
                 }
             }
         }
@@ -334,8 +332,76 @@ public class MainActivity extends Activity {
             Log.d("test", "response " + values[0]);
             //process server response here....
             replyTextView.append(values[0] + "\n");
+            parseMessage(values[0]);
         }
 
     }
 
+    private void parseMessage(String message) {
+        if (message == null) return;
+
+        // Check if it is a position message
+        if (message.contains("POS=")) {
+            try {
+                int slaveId = -1;
+                if (message.contains("[SLAVE 1]")) {
+                    slaveId = 1;
+                } else if (message.contains("[SLAVE 2]")) {
+                    slaveId = 2;
+                }
+
+                if (slaveId != -1) {
+                    int posIndex = message.indexOf("POS=");
+                    String valuesStr = message.substring(posIndex + 4).trim();
+                    String[] values = valuesStr.split(",");
+
+                    if (values.length == 24) {
+                        updateClocks(slaveId, values);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "Error parsing message", e);
+            }
+        }
+    }
+
+    private void updateClocks(int slaveId, String[] values) {
+        // Slave 1 manages Col 0 and Col 1
+        // Slave 2 manages Col 2 and Col 3
+        int colLeft = (slaveId == 1) ? 0 : 2;
+        int colRight = (slaveId == 1) ? 1 : 3;
+
+        // The server sends data board by board.
+        // Each slave handles 6 boards and each board controls one row (2 clocks).
+        // Board i controls Row i.
+        // Board i motors 0,1 -> Left Clock (colLeft)
+        // Board i motors 2,3 -> Right Clock (colRight)
+
+        for (int row = 0; row < GRID_ROWS; row++) {
+            int baseIndex = row * 4;
+            
+            if (baseIndex + 3 >= values.length) break;
+
+            try {
+                // Left Clock (Motors 0, 1 of the board)
+                float valL1 = Float.parseFloat(values[baseIndex]);
+                float valL2 = Float.parseFloat(values[baseIndex + 1]);
+                if (clockViews[row][colLeft] != null) {
+                    clockViews[row][colLeft].setHand1Angle(valL1);
+                    clockViews[row][colLeft].setHand2Angle(valL2);
+                }
+
+                // Right Clock (Motors 2, 3 of the board)
+                float valR1 = Float.parseFloat(values[baseIndex + 2]);
+                float valR2 = Float.parseFloat(values[baseIndex + 3]);
+                if (clockViews[row][colRight] != null) {
+                    clockViews[row][colRight].setHand1Angle(valR1);
+                    clockViews[row][colRight].setHand2Angle(valR2);
+                }
+
+            } catch (NumberFormatException e) {
+                Log.e("MainActivity", "Error parsing float", e);
+            }
+        }
+    }
 }
