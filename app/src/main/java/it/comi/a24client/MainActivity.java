@@ -372,13 +372,17 @@ public class MainActivity extends Activity {
         int colRight = (slaveId == 1) ? 1 : 3;
 
         // The server sends data board by board.
-        // Each slave handles 6 boards and each board controls one row (2 clocks).
-        // Board i controls Row i.
-        // Board i motors 0,1 -> Left Clock (colLeft)
-        // Board i motors 2,3 -> Right Clock (colRight)
+        // Each slave has 6 boards (0-5):
+        //   Boards 0,1,2 -> top digit (rows 0,1,2)
+        //   Boards 3,4,5 -> bottom digit (rows 3,4,5)
+        
+        int[] boardToRow = {0, 1, 2, 3, 4, 5};
 
-        for (int row = 0; row < GRID_ROWS; row++) {
-            int baseIndex = row * 4;
+        for (int boardIndex = 0; boardIndex < 6; boardIndex++) {
+            if (boardIndex >= boardToRow.length) break;
+            
+            int row = boardToRow[boardIndex];
+            int baseIndex = boardIndex * 4;
             
             if (baseIndex + 3 >= values.length) break;
 
