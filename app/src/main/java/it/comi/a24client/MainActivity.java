@@ -1,289 +1,236 @@
 package it.comi.a24client;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.IntentService;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.graphics.Color;
-import android.view.Gravity;
-import android.view.ViewGroup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.Socket;
-import java.util.Calendar;
-import java.util.Date;
 
 public class MainActivity extends Activity {
-    TcpClient mTcpClient;
-    TextView replyTextView;
-    Button connectButton;
-    Button sendButton;
-    EditText dataEditText;
 
-    // Grid constants
-    private static final int GRID_ROWS = 6;
-    private static final int GRID_COLS = 4;
+    private TcpClient mTcpClient;
+    private TextView outputTextView;
+    private ScrollView outputScrollView;
+    private Button connectButton;
+    private Button sendButton;
+    private EditText dataEditText;
+    private Button finetuneButton;
 
-    // Grid selection state
-    private int selectedRow = 0;
-    private int selectedCol = 0;
-    private int selectedHand = 0; // 0: Hours, 1: Minutes
-    private int selectedDegrees = 0;
-    private ClockView[][] clockViews = new ClockView[GRID_ROWS][GRID_COLS];
+    // Quick command buttons that need enable/disable
+    private Button[] commandButtons;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(16, 16, 16, 16);
 
-        final LinearLayout linearLayout = new LinearLayout(this);
-        linearLayout.setOrientation(LinearLayout.VERTICAL);
-        TextView textView;
-
-        textView = new TextView(this);
-        textView.setText("hostname / IP:");
-        linearLayout.addView(textView);
-
-        LinearLayout ipContainer = new LinearLayout(this);
-        ipContainer.setOrientation(LinearLayout.HORIZONTAL);
-        linearLayout.addView(ipContainer);
+        // === ROW 1: IP + CONNECT ===
+        LinearLayout ipRow = new LinearLayout(this);
+        ipRow.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(ipRow);
 
         final EditText hostnameEditText = new EditText(this);
         hostnameEditText.setText("10.10.0.22");
         hostnameEditText.setSingleLine(true);
-        LinearLayout.LayoutParams ipParams = new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1.0f
-        );
-        hostnameEditText.setLayoutParams(ipParams);
-        ipContainer.addView(hostnameEditText);
+        hostnameEditText.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        ipRow.addView(hostnameEditText);
 
         connectButton = new Button(this);
         connectButton.setText("CONNECT");
         connectButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) {
+            public void onClick(View v) {
                 if (mTcpClient != null && mTcpClient.isConnected()) {
                     mTcpClient.stopClient();
                     mTcpClient = null;
+                    App.getInstance().setTcpClient(null);
                     setConnectedStatus(false);
                 } else {
                     new ConnectTask().execute(hostnameEditText.getText().toString(), "23");
                 }
             }
         });
-        ipContainer.addView(connectButton);
+        ipRow.addView(connectButton);
 
-        textView = new TextView(this);
-        textView.setText("data to send:");
-        linearLayout.addView(textView);
+        // === ROW 2: Quick Commands label ===
+        TextView cmdLabel = new TextView(this);
+        cmdLabel.setText("Comandi:");
+        cmdLabel.setPadding(0, 16, 0, 4);
+        root.addView(cmdLabel);
 
-        LinearLayout dataContainer = new LinearLayout(this);
-        dataContainer.setOrientation(LinearLayout.HORIZONTAL);
-        linearLayout.addView(dataContainer);
+        // === ROW 3: Quick command buttons - row 1 ===
+        LinearLayout cmdRow1 = new LinearLayout(this);
+        cmdRow1.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(cmdRow1);
+
+        Button btnSetntp = makeCommandButton("SETNTP", "SETNTP");
+        Button btnSethome = makeCommandButton("SETHOME", "SETHOME");
+        Button btnSetzero = makeCommandButton("SETZERO", "SETZERO");
+        Button btnGetpos = makeCommandButton("GETPOS", "GETPOS");
+
+        cmdRow1.addView(btnSetntp, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow1.addView(btnSethome, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow1.addView(btnSetzero, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow1.addView(btnGetpos, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        // === ROW 4: Quick command buttons - row 2 ===
+        LinearLayout cmdRow2 = new LinearLayout(this);
+        cmdRow2.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(cmdRow2);
+
+        Button btnLedOn = makeCommandButton("LED ON", "SETLED=1");
+        Button btnLedOff = makeCommandButton("LED OFF", "SETLED=0");
+        Button btnDebug = makeCommandButton("DEBUG", "DEBUG");
+        Button btnUptime = makeCommandButton("UPTIME", "UPTIME");
+
+        cmdRow2.addView(btnLedOn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow2.addView(btnLedOff, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow2.addView(btnDebug, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        cmdRow2.addView(btnUptime, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        commandButtons = new Button[]{btnSetntp, btnSethome, btnSetzero, btnGetpos, btnLedOn, btnLedOff, btnDebug, btnUptime};
+
+        // === ROW 5: FINETUNE button ===
+        finetuneButton = new Button(this);
+        finetuneButton.setText("FINETUNE \u25B6");
+        finetuneButton.setEnabled(false);
+        finetuneButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this, FineTuneActivity.class);
+                startActivity(intent);
+            }
+        });
+        root.addView(finetuneButton);
+
+        // === ROW 6: Free text + SEND ===
+        LinearLayout sendRow = new LinearLayout(this);
+        sendRow.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(sendRow);
 
         dataEditText = new EditText(this);
-        dataEditText.setText("ECHO");
-        LinearLayout.LayoutParams dataParams = new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1.0f
-        );
-        dataEditText.setLayoutParams(dataParams);
-        dataContainer.addView(dataEditText);
+        dataEditText.setHint("Comando...");
+        dataEditText.setSingleLine(true);
+        dataEditText.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        sendRow.addView(dataEditText);
 
         sendButton = new Button(this);
         sendButton.setText("SEND");
+        sendButton.setEnabled(false);
         sendButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) {
+            public void onClick(View v) {
                 if (mTcpClient != null) {
-                    String dataToSend = dataEditText.getText().toString();
-                    mTcpClient.sendMessage(dataToSend);
+                    String cmd = dataEditText.getText().toString();
+                    mTcpClient.sendMessage(cmd);
+                    appendOutput("> " + cmd);
                 }
             }
         });
-        sendButton.setEnabled(false);
-        dataContainer.addView(sendButton);
+        sendRow.addView(sendButton);
 
-        // --- Grid UI ---
-        TextView gridLabel = new TextView(this);
-        gridLabel.setText("Select Clock (Tap to toggle Hand):");
-        linearLayout.addView(gridLabel);
+        // === ROW 7: Output area ===
+        TextView outputLabel = new TextView(this);
+        outputLabel.setText("Output:");
+        outputLabel.setPadding(0, 16, 0, 4);
+        root.addView(outputLabel);
 
-        TextView legendLabel = new TextView(this);
-        legendLabel.setText("Red: Hand 1 (Even Motor), Blue: Hand 2 (Odd Motor)");
-        linearLayout.addView(legendLabel);
+        outputScrollView = new ScrollView(this);
+        outputScrollView.setBackgroundColor(Color.parseColor("#1a1a2e"));
+        outputScrollView.setPadding(8, 8, 8, 8);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
+        root.addView(outputScrollView, scrollParams);
 
-        LinearLayout gridContainer = new LinearLayout(this);
-        gridContainer.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1.0f
-        );
-        linearLayout.addView(gridContainer, gridParams);
+        outputTextView = new TextView(this);
+        outputTextView.setTextColor(Color.parseColor("#00ff88"));
+        outputTextView.setTextSize(12);
+        outputScrollView.addView(outputTextView);
 
-        for (int r = 0; r < GRID_ROWS; r++) {
-            LinearLayout rowLayout = new LinearLayout(this);
-            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
-            rowLayout.setWeightSum(GRID_COLS);
-            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    0,
-                    1.0f
-            );
-            gridContainer.addView(rowLayout, rowParams);
+        setContentView(root);
 
-            for (int c = 0; c < GRID_COLS; c++) {
-                final int row = r;
-                final int col = c;
-                ClockView cv = new ClockView(this);
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        1.0f
-                );
-                cv.setLayoutParams(params);
-                cv.setOnClickListener(new View.OnClickListener() {
+        // Disable all command buttons initially
+        setConnectedStatus(false);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-register as the message listener when coming back from FineTuneActivity
+        App.getInstance().setMessageListener(new TcpClient.OnMessageReceived() {
+            @Override
+            public void messageReceived(String message) {
+                runOnUiThread(new Runnable() {
                     @Override
-                    public void onClick(View view) {
-                        handleClockClick(row, col);
+                    public void run() {
+                        appendOutput(message);
                     }
                 });
-                clockViews[r][c] = cv;
-                rowLayout.addView(cv);
-            }
-        }
-
-        // --- Slider UI ---
-        final TextView sliderLabel = new TextView(this);
-        sliderLabel.setText("Rotate: 0");
-        linearLayout.addView(sliderLabel);
-
-        SeekBar seekBar = new SeekBar(this);
-        seekBar.setMax(180); // Range -90 to +90
-        seekBar.setProgress(90); // 0
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                selectedDegrees = progress - 90;
-                sliderLabel.setText("Rotate: " + selectedDegrees);
-                updateDataString();
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-        linearLayout.addView(seekBar);
-
-        // Initialize
-        updateGridSelection();
-        updateDataString();
-
-        replyTextView = new TextView(this);
-        final ScrollView replyTextScrollView = new ScrollView(this);
-        replyTextScrollView.addView(replyTextView);
-
-        final TextView outputLabel = new TextView(this);
-        outputLabel.setText("output:");
-        outputLabel.setVisibility(View.GONE);
-
-        final Button toggleOutputButton = new Button(this);
-        toggleOutputButton.setText("Show Output");
-        toggleOutputButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (replyTextScrollView.getVisibility() == View.VISIBLE) {
-                    replyTextScrollView.setVisibility(View.GONE);
-                    outputLabel.setVisibility(View.GONE);
-                    toggleOutputButton.setText("Show Output");
-                } else {
-                    replyTextScrollView.setVisibility(View.VISIBLE);
-                    outputLabel.setVisibility(View.VISIBLE);
-                    toggleOutputButton.setText("Hide Output");
-                }
             }
         });
-        linearLayout.addView(toggleOutputButton);
-        linearLayout.addView(outputLabel);
-        replyTextScrollView.setVisibility(View.GONE);
-        linearLayout.addView(replyTextScrollView);
-
-        this.setContentView(linearLayout);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-
-        if (mTcpClient != null) {
+        if (isFinishing() && mTcpClient != null) {
             mTcpClient.stopClient();
         }
     }
 
-    private void handleClockClick(int row, int col) {
-        if (selectedRow == row && selectedCol == col) {
-            // Toggle hand
-            selectedHand = 1 - selectedHand; // Toggle 0 <-> 1
-        } else {
-            // Select new clock, reset hand to Hours (0)
-            selectedRow = row;
-            selectedCol = col;
-            selectedHand = 0;
-        }
-        updateGridSelection();
-        updateDataString();
-    }
-
-    private void updateGridSelection() {
-        for (int r = 0; r < GRID_ROWS; r++) {
-            for (int c = 0; c < GRID_COLS; c++) {
-                ClockView cv = clockViews[r][c];
-                if (cv == null) continue;
-                if (r == selectedRow && c == selectedCol) {
-                    cv.setBackgroundColor(Color.CYAN);
-                } else {
-                    cv.setBackgroundColor(Color.LTGRAY);
+    private Button makeCommandButton(String label, final String command) {
+        Button btn = new Button(this);
+        btn.setText(label);
+        btn.setTextSize(11);
+        btn.setPadding(4, 4, 4, 4);
+        btn.setEnabled(false);
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mTcpClient != null) {
+                    mTcpClient.sendMessage(command);
+                    appendOutput("> " + command);
                 }
             }
-        }
+        });
+        return btn;
     }
 
-    private void updateDataString() {
-        if (dataEditText != null) {
-            String data = String.format("FINETUNE=%d,%d,%d,%+.2f", selectedRow, selectedCol, selectedHand, (float) selectedDegrees);
-            dataEditText.setText(data);
-        }
-    }
-
-    protected void setConnectedStatus(boolean connectedStatus) {
+    private void appendOutput(final String text) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (connectedStatus) {
-                    sendButton.setEnabled(true);
-                    connectButton.setText("DISCONNECT");
-                } else {
-                    sendButton.setEnabled(false);
-                    connectButton.setText("CONNECT");
+                outputTextView.append(text + "\n");
+                outputScrollView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        outputScrollView.fullScroll(View.FOCUS_DOWN);
+                    }
+                });
+            }
+        });
+    }
+
+    private void setConnectedStatus(final boolean connected) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                connectButton.setText(connected ? "DISCONNECT" : "CONNECT");
+                sendButton.setEnabled(connected);
+                finetuneButton.setEnabled(connected);
+                for (Button btn : commandButtons) {
+                    btn.setEnabled(connected);
                 }
             }
         });
@@ -292,118 +239,42 @@ public class MainActivity extends Activity {
     public class ConnectTask extends AsyncTask<String, String, TcpClient> {
 
         @Override
-        protected TcpClient doInBackground(String... message) {
-
-            //we create a TCPClient object
+        protected TcpClient doInBackground(String... params) {
             mTcpClient = new TcpClient(
-                new TcpClient.OnConnection() {
-                    @Override
-                    //here the messageReceived method is implemented
-                    public void connected(String message) {
-                        setConnectedStatus(true);
-                    }
+                    new TcpClient.OnConnection() {
+                        @Override
+                        public void connected(String message) {
+                            App.getInstance().setTcpClient(mTcpClient);
+                            setConnectedStatus(true);
+                            publishProgress("Connesso.");
+                        }
 
-                    @Override
-                    //here the messageReceived method is implemented
-                    public void connectionFailed(String message) {
-                        setConnectedStatus(false);
+                        @Override
+                        public void connectionFailed(String message) {
+                            setConnectedStatus(false);
+                            publishProgress("Connessione fallita.");
+                        }
+                    },
+                    new TcpClient.OnMessageReceived() {
+                        @Override
+                        public void messageReceived(String message) {
+                            publishProgress(message);
+                            // Also forward to the App-level listener (for FineTuneActivity)
+                            TcpClient.OnMessageReceived appListener = App.getInstance().getMessageListener();
+                            if (appListener != null) {
+                                appListener.messageReceived(message);
+                            }
+                        }
                     }
-                },
-
-                new TcpClient.OnMessageReceived() {
-                    @Override
-                    //here the messageReceived method is implemented
-                    public void messageReceived(String message) {
-                        //this method calls the onProgressUpdate
-                        publishProgress(message);
-                    }
-                }
             );
-            mTcpClient.run(message[0], message[1]);
-
+            mTcpClient.run(params[0], params[1]);
             return null;
         }
 
         @Override
         protected void onProgressUpdate(String... values) {
             super.onProgressUpdate(values);
-            //response received from server
-            Log.d("test", "response " + values[0]);
-            //process server response here....
-            replyTextView.append(values[0] + "\n");
-            parseMessage(values[0]);
-        }
-
-    }
-
-    private void parseMessage(String message) {
-        if (message == null) return;
-
-        if (message.startsWith("POS ")) {
-            // Format: "POS <slaveId> v1,v2,v3,..."
-            try {
-                int slaveId = Character.getNumericValue(message.charAt(4));
-                String valuesStr = message.substring(6).trim();
-                String[] values = valuesStr.split(",");
-
-                if (values.length == 24 && (slaveId == 1 || slaveId == 2)) {
-                    updateClocks(slaveId, values);
-                }
-            } catch (Exception e) {
-                Log.e("MainActivity", "Error parsing POS message", e);
-            }
-        } else if (message.startsWith("OK ")) {
-            Log.d("MainActivity", "Command OK: " + message.substring(3));
-        } else if (message.startsWith("ERR ")) {
-            Log.e("MainActivity", "Command error: " + message.substring(4));
-        } else if (message.startsWith("STATUS ")) {
-            Log.d("MainActivity", "Status: " + message.substring(7));
-        } else if (message.startsWith("LOG ")) {
-            Log.d("MainActivity", "Log: " + message.substring(4));
-        }
-    }
-
-    private void updateClocks(int slaveId, String[] values) {
-        // Slave 1 manages Col 0 and Col 1
-        // Slave 2 manages Col 2 and Col 3
-        int colLeft = (slaveId == 1) ? 0 : 2;
-        int colRight = (slaveId == 1) ? 1 : 3;
-
-        // The server sends data board by board.
-        // Each slave has 6 boards (0-5):
-        //   Boards 0,1,2 -> top digit (rows 0,1,2)
-        //   Boards 3,4,5 -> bottom digit (rows 3,4,5)
-        
-        int[] boardToRow = {0, 1, 2, 3, 4, 5};
-
-        for (int boardIndex = 0; boardIndex < 6; boardIndex++) {
-            if (boardIndex >= boardToRow.length) break;
-            
-            int row = boardToRow[boardIndex];
-            int baseIndex = boardIndex * 4;
-            
-            if (baseIndex + 3 >= values.length) break;
-
-            try {
-                // Left Clock (Motors 0, 1 of the board)
-                float valL1 = Float.parseFloat(values[baseIndex]);
-                float valL2 = Float.parseFloat(values[baseIndex + 1]);
-                if (clockViews[row][colLeft] != null) {
-                    clockViews[row][colLeft].setHand1Angle(valL1);
-                    clockViews[row][colLeft].setHand2Angle(valL2);
-                }
-
-                // Right Clock (Motors 2, 3 of the board)
-                float valR1 = Float.parseFloat(values[baseIndex + 2]);
-                float valR2 = Float.parseFloat(values[baseIndex + 3]);
-                if (clockViews[row][colRight] != null) {
-                    clockViews[row][colRight].setHand1Angle(valR1);
-                    clockViews[row][colRight].setHand2Angle(valR2);
-                }
-
-            } catch (NumberFormatException e) {
-                Log.e("MainActivity", "Error parsing float", e);
-            }
+            appendOutput(values[0]);
         }
     }
 }
