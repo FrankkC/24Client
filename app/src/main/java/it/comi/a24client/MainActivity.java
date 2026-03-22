@@ -269,8 +269,7 @@ public class MainActivity extends Activity {
 
     private void updateDataString() {
         if (dataEditText != null) {
-            char handChar = (selectedHand == 0) ? '0' : '1';
-            String data = String.format("%d%d%c%+d", selectedRow, selectedCol, handChar, selectedDegrees);
+            String data = String.format("FINETUNE=%d,%d,%d,%+.2f", selectedRow, selectedCol, selectedHand, (float) selectedDegrees);
             dataEditText.setText(data);
         }
     }
@@ -340,28 +339,27 @@ public class MainActivity extends Activity {
     private void parseMessage(String message) {
         if (message == null) return;
 
-        // Check if it is a position message
-        if (message.contains("POS=")) {
+        if (message.startsWith("POS ")) {
+            // Format: "POS <slaveId> v1,v2,v3,..."
             try {
-                int slaveId = -1;
-                if (message.contains("[SLAVE 1]")) {
-                    slaveId = 1;
-                } else if (message.contains("[SLAVE 2]")) {
-                    slaveId = 2;
-                }
+                int slaveId = Character.getNumericValue(message.charAt(4));
+                String valuesStr = message.substring(6).trim();
+                String[] values = valuesStr.split(",");
 
-                if (slaveId != -1) {
-                    int posIndex = message.indexOf("POS=");
-                    String valuesStr = message.substring(posIndex + 4).trim();
-                    String[] values = valuesStr.split(",");
-
-                    if (values.length == 24) {
-                        updateClocks(slaveId, values);
-                    }
+                if (values.length == 24 && (slaveId == 1 || slaveId == 2)) {
+                    updateClocks(slaveId, values);
                 }
             } catch (Exception e) {
-                Log.e("MainActivity", "Error parsing message", e);
+                Log.e("MainActivity", "Error parsing POS message", e);
             }
+        } else if (message.startsWith("OK ")) {
+            Log.d("MainActivity", "Command OK: " + message.substring(3));
+        } else if (message.startsWith("ERR ")) {
+            Log.e("MainActivity", "Command error: " + message.substring(4));
+        } else if (message.startsWith("STATUS ")) {
+            Log.d("MainActivity", "Status: " + message.substring(7));
+        } else if (message.startsWith("LOG ")) {
+            Log.d("MainActivity", "Log: " + message.substring(4));
         }
     }
 
