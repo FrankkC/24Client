@@ -167,18 +167,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Re-register as the message listener when coming back from FineTuneActivity
-        App.getInstance().setMessageListener(new TcpClient.OnMessageReceived() {
-            @Override
-            public void messageReceived(String message) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        appendOutput(message);
-                    }
-                });
-            }
-        });
+        // Clear the app-level listener: MainActivity handles output via publishProgress directly
+        App.getInstance().setMessageListener(null);
     }
 
     @Override
