@@ -1,6 +1,7 @@
 package it.comi.a24client;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -16,6 +17,12 @@ import android.graphics.Color;
 
 public class MainActivity extends Activity {
 
+    private static final String PREFS_NAME = "it.comi.a24client.network";
+    private static final String KEY_LAST_HOST = "last_host";
+    private static final String DEFAULT_HOST = "24clocks-master.local";
+    private static final int DEFAULT_TCP_PORT = 23;
+    private static final int PROBE_CONNECT_TIMEOUT_MS = 700;
+
     private TcpClient mTcpClient;
     private TextView outputTextView;
     private ScrollView outputScrollView;
@@ -23,6 +30,7 @@ public class MainActivity extends Activity {
     private Button sendButton;
     private EditText dataEditText;
     private Button finetuneButton;
+    private EditText hostnameEditText;
 
     // Quick command buttons that need enable/disable
     private Button[] commandButtons;
@@ -40,8 +48,9 @@ public class MainActivity extends Activity {
         ipRow.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(ipRow);
 
-        final EditText hostnameEditText = new EditText(this);
-        hostnameEditText.setText("10.10.0.22");
+        hostnameEditText = new EditText(this);
+        String lastHost = loadCachedHost();
+        hostnameEditText.setText(lastHost.isEmpty() ? DEFAULT_HOST : lastHost);
         hostnameEditText.setSingleLine(true);
         hostnameEditText.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         ipRow.addView(hostnameEditText);
@@ -57,7 +66,7 @@ public class MainActivity extends Activity {
                     App.getInstance().setTcpClient(null);
                     setConnectedStatus(false);
                 } else {
-                    new ConnectTask().execute(hostnameEditText.getText().toString(), "23");
+                    new ConnectTask().execute(hostnameEditText.getText().toString(), String.valueOf(DEFAULT_TCP_PORT));
                 }
             }
         });
@@ -230,19 +239,69 @@ public class MainActivity extends Activity {
 
         @Override
         protected TcpClient doInBackground(String... params) {
+            final int tcpPort = Integer.parseInt(params[1]);
+            final String userHost = params[0].trim();
+            String endpoint = null;
+            int resolvedPort = tcpPort;
+
+            String cachedHost = loadCachedHost();
+            if (!cachedHost.isEmpty() && !cachedHost.equalsIgnoreCase(userHost)) {
+                publishProgress("Provo IP cached: " + cachedHost);
+                if (TcpClient.canConnect(cachedHost, tcpPort, PROBE_CONNECT_TIMEOUT_MS)) {
+                    endpoint = cachedHost;
+                    publishProgress("Endpoint attivo da cache: " + endpoint);
+                }
+            }
+
+            if (endpoint == null && !userHost.isEmpty()) {
+                publishProgress("Provo host inserito: " + userHost);
+                if (TcpClient.canConnect(userHost, tcpPort, PROBE_CONNECT_TIMEOUT_MS)) {
+                    endpoint = userHost;
+                    publishProgress("Endpoint attivo da input: " + endpoint);
+                }
+            }
+
+            if (endpoint == null) {
+                publishProgress("Discovery broadcast in corso...");
+                DiscoveryClient.DiscoveryResult result = DiscoveryClient.discover();
+                if (result != null && result.host != null && !result.host.isEmpty()) {
+                    endpoint = result.host;
+                    if (result.port > 0) {
+                        resolvedPort = result.port;
+                    }
+                    publishProgress("Endpoint trovato via probe: " + endpoint + ":" + result.port);
+                }
+            }
+
+            if (endpoint == null) {
+                setConnectedStatus(false);
+                publishProgress("Nessun endpoint raggiungibile (cache/input/probe).");
+                return null;
+            }
+
+            final String resolvedEndpoint = endpoint;
+            final int finalPort = resolvedPort;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    hostnameEditText.setText(resolvedEndpoint);
+                }
+            });
+
             mTcpClient = new TcpClient(
                     new TcpClient.OnConnection() {
                         @Override
                         public void connected(String message) {
+                            saveCachedHost(resolvedEndpoint);
                             App.getInstance().setTcpClient(mTcpClient);
                             setConnectedStatus(true);
-                            publishProgress("Connesso.");
+                            publishProgress("Connesso a " + resolvedEndpoint + ":" + finalPort);
                         }
 
                         @Override
                         public void connectionFailed(String message) {
                             setConnectedStatus(false);
-                            publishProgress("Connessione fallita.");
+                            publishProgress("Connessione fallita su " + resolvedEndpoint + ":" + finalPort);
                         }
                     },
                     new TcpClient.OnMessageReceived() {
@@ -257,7 +316,7 @@ public class MainActivity extends Activity {
                         }
                     }
             );
-            mTcpClient.run(params[0], params[1]);
+            mTcpClient.run(resolvedEndpoint, String.valueOf(finalPort));
             return null;
         }
 
@@ -266,5 +325,16 @@ public class MainActivity extends Activity {
             super.onProgressUpdate(values);
             appendOutput(values[0]);
         }
+    }
+
+    private String loadCachedHost() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        return prefs.getString(KEY_LAST_HOST, "").trim();
+    }
+
+    private void saveCachedHost(String host) {
+        if (host == null || host.trim().isEmpty()) return;
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        prefs.edit().putString(KEY_LAST_HOST, host.trim()).apply();
     }
 }

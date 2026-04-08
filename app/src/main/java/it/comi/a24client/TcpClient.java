@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 
@@ -68,6 +69,13 @@ public class TcpClient {
 
         mRun = false;
 
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        } catch (IOException ignored) {
+        }
+
         if (mBufferOut != null) {
             mBufferOut.flush();
             mBufferOut.close();
@@ -80,12 +88,29 @@ public class TcpClient {
     }
 
     public boolean isConnected() {
-        return socket != null && socket.isConnected();
+        return socket != null && socket.isConnected() && !socket.isClosed();
+    }
+
+    public static boolean canConnect(String hostname, int port, int timeoutMs) {
+        Socket probe = new Socket();
+        try {
+            probe.connect(new InetSocketAddress(hostname, port), timeoutMs);
+            return true;
+        } catch (IOException ignored) {
+            return false;
+        } finally {
+            try {
+                probe.close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     public void run(String hostname, String port) {
 
         mRun = true;
+
+        Socket localSocket = null;
 
         try {
             InetAddress serverAddr = InetAddress.getByName(hostname);
@@ -93,9 +118,10 @@ public class TcpClient {
             Log.d("TCP Client", "C: Connecting...");
 
             try {
-                this.socket = new Socket(serverAddr, portInt);
+                localSocket = new Socket(serverAddr, portInt);
+                this.socket = localSocket;
 
-                if (socket.isConnected()) {
+                if (localSocket.isConnected()) {
                     Log.d("socketDebug","connected");
                 } else {
                     Log.d("socketDebug","NOT connected");
@@ -104,16 +130,21 @@ public class TcpClient {
                 mConnectionListener.connected("");
             } catch (UnknownHostException e) {
                 mConnectionListener.connectionFailed("");
+                return;
             } catch (IOException e) {
                 mConnectionListener.connectionFailed("");
+                return;
             }
 
             try {
-                mBufferOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
-                mBufferIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                mBufferOut = new PrintWriter(new BufferedWriter(new OutputStreamWriter(localSocket.getOutputStream())), true);
+                mBufferIn = new BufferedReader(new InputStreamReader(localSocket.getInputStream()));
 
                 while (mRun) {
                     mServerMessage = mBufferIn.readLine();
+                    if (mServerMessage == null) {
+                        break;
+                    }
                     if (mServerMessage != null && mMessageListener != null) {
                         mMessageListener.messageReceived(mServerMessage);
                     }
@@ -123,11 +154,18 @@ public class TcpClient {
             } catch (Exception e) {
                 Log.e("TCP", "S: Error", e);
             } finally {
-                socket.close();
+                try {
+                    if (localSocket != null && !localSocket.isClosed()) {
+                        localSocket.close();
+                    }
+                } catch (IOException ignored) {
+                }
+                socket = null;
             }
 
         } catch (Exception e) {
             Log.e("TCP", "C: Error", e);
+            mConnectionListener.connectionFailed("");
         }
 
     }
