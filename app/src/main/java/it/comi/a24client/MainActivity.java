@@ -11,9 +11,13 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.graphics.Color;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
 
@@ -24,8 +28,9 @@ public class MainActivity extends Activity {
     private static final int PROBE_CONNECT_TIMEOUT_MS = 700;
 
     private TcpClient mTcpClient;
-    private TextView outputTextView;
-    private ScrollView outputScrollView;
+    private RecyclerView logRecyclerView;
+    private LogAdapter logAdapter;
+    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
     private Button connectButton;
     private Button sendButton;
     private EditText dataEditText;
@@ -165,22 +170,21 @@ public class MainActivity extends Activity {
         clearOutputButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                outputTextView.setText("");
+            logAdapter.clear();
             }
         });
         outputHeaderRow.addView(clearOutputButton);
 
-        outputScrollView = new ScrollView(this);
-        outputScrollView.setBackgroundColor(Color.parseColor("#1a1a2e"));
-        outputScrollView.setPadding(8, 8, 8, 8);
+        logAdapter = new LogAdapter();
+        logRecyclerView = new RecyclerView(this);
+        logRecyclerView.setBackgroundColor(Color.parseColor("#1a1a2e"));
+        logRecyclerView.setPadding(8, 8, 8, 8);
+        logRecyclerView.setClipToPadding(false);
+        logRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        logRecyclerView.setAdapter(logAdapter);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
-        root.addView(outputScrollView, scrollParams);
-
-        outputTextView = new TextView(this);
-        outputTextView.setTextColor(Color.parseColor("#00ff88"));
-        outputTextView.setTextSize(12);
-        outputScrollView.addView(outputTextView);
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
+        root.addView(logRecyclerView, scrollParams);
 
         setContentView(root);
 
@@ -225,13 +229,12 @@ public class MainActivity extends Activity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                outputTextView.append(text + "\n");
-                outputScrollView.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        outputScrollView.fullScroll(View.FOCUS_DOWN);
-                    }
-                });
+                logAdapter.add(new LogEntry(
+                        LogEntry.classify(text),
+                        timeFormat.format(new Date()),
+                        text
+                ));
+                logRecyclerView.scrollToPosition(logAdapter.getItemCount() - 1);
             }
         });
     }
