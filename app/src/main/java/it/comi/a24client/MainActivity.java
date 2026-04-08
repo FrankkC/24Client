@@ -149,11 +149,26 @@ public class MainActivity extends Activity {
         });
         sendRow.addView(sendButton);
 
-        // === ROW 7: Output area ===
+        // === ROW 7: Output header + clear button ===
+        LinearLayout outputHeaderRow = new LinearLayout(this);
+        outputHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
+        outputHeaderRow.setPadding(0, 16, 0, 4);
+        root.addView(outputHeaderRow);
+
         TextView outputLabel = new TextView(this);
         outputLabel.setText("Output:");
-        outputLabel.setPadding(0, 16, 0, 4);
-        root.addView(outputLabel);
+        outputLabel.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        outputHeaderRow.addView(outputLabel);
+
+        Button clearOutputButton = new Button(this);
+        clearOutputButton.setText("CLEAR");
+        clearOutputButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                outputTextView.setText("");
+            }
+        });
+        outputHeaderRow.addView(clearOutputButton);
 
         outputScrollView = new ScrollView(this);
         outputScrollView.setBackgroundColor(Color.parseColor("#1a1a2e"));
